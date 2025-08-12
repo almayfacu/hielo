@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>💖 Rompé el Hielo</title>
+  <style>
+    :root {
+      --pastel-pink: #ffc0cb;
+      --pastel-blue: #add8e6;
+      --pastel-purple: #e6ccff;
+      --glass: rgba(255, 255, 255, 0.25);
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #e4fbfb;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #game-container {
+      text-align: center;
+      position: relative;
+    }
+
+    #ice {
+      width: 300px;
+      height: 200px;
+      background: url('hielo.png') no-repeat center/cover;
+      border-radius: 50%;
+      margin: 0 auto;
+      transition: transform 0.1s;
+      cursor: pointer;
+    }
+
+    #ice:active {
+      transform: scale(0.95);
+    }
+
+    #click-count {
+      color: #58d5fe;
+      margin-top: 10px;
+      font-size: 2rem;
+      font-weight: bold;
+      text-shadow: 1px 1px #888;
+      font-family: 'Comic Sans MS';
+    }
+
+    #result {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 0 30px rgba(255, 255, 255, 0.7);
+      z-index: 10;
+    }
+
+    #result img {
+      width: 80vw;
+      max-width: 400px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+      animation: aparecer 1s ease-out forwards;
+    }
+
+    @keyframes aparecer {
+      from { transform: scale(0); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    #play-again {
+      background-color: #58d5fe;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      font-family: 'Comic Sans MS';
+      color: #ffffff;
+    }
+
+    canvas.confetti {
+      position: fixed;
+      pointer-events: none;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="ice" onclick="breakIce()"></div>
+    <div id="click-count">Rompé el hielo para descubrir otra razón</div>
+
+    <div id="result">
+      <img src="ver la vida.png" alt="Sorpresa 💖" />
+      <button id="play-again" onclick="resetGame()">Volver a jugar</button>
+    </div>
+    <canvas class="confetti"></canvas>
+  </div>
+
+  <audio id="click-sound" src="romper.mp3"></audio>
+  <audio id="win-sound" src="ganaste.mp3"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script>
+    let clicks = 0;
+    const ice = document.getElementById("ice");
+    const count = document.getElementById("click-count");
+    const result = document.getElementById("result");
+    const clickSound = document.getElementById("click-sound");
+    const winSound = document.getElementById("win-sound");
+
+    function breakIce() {
+      if (clicks >= 23) return;
+      clicks++;
+      clickSound.currentTime = 0;
+      clickSound.play();
+
+      ice.style.opacity = 1 - clicks / 23;
+      count.innerText = clicks < 23
+        ? `¡Faltan ${23 - clicks} toques!`
+        : "¡Ganastee!";
+
+      if (clicks === 23) {
+        setTimeout(showResult, 500);
+      }
+    }
+
+    function showResult() {
+      winSound.play();
+      result.style.display = "flex";
+      launchConfetti();
+    }
+
+    function resetGame() {
+      clicks = 0;
+      result.style.display = "none";
+      count.innerText = "Toca el hielo 23 veces";
+      ice.style.opacity = 1;
+    }
+
+    function launchConfetti() {
+      const duration = 2 * 1000;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 5 };
+
+      function randomInRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      const interval = setInterval(function () {
+        const timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return clearInterval(interval);
+
+        const particleCount = 50 * (timeLeft / duration);
+        confetti(Object.assign({}, defaults, {
+          particleCount,
+          origin: { x: randomInRange(0.1, 0.9), y: Math.random() - 0.2 }
+        }));
+      }, 250);
+    }
+  </script>
+</body>
+</html>
