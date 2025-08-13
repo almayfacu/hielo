@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>💖 Rompé el Hielo</title>
+  <title>Rompé el Hielo con Alma</title>
   <style>
     :root {
       --pastel-pink: #ffc0cb;
@@ -16,7 +16,8 @@
       margin: 0;
       padding: 0;
       background: #e4fbfb;
-      font-family: 'Segoe UI', sans-serif;
+      /* Fuente común desktop/móvil */
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -49,7 +50,8 @@
       font-size: 2rem;
       font-weight: bold;
       text-shadow: 1px 1px #888;
-      font-family: 'Comic Sans MS';
+      /* usa la misma fuente común */
+      font-family: inherit;
     }
 
     #result {
@@ -89,7 +91,8 @@
       border-radius: 12px;
       cursor: pointer;
       box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-      font-family: 'Comic Sans MS';
+      /* misma fuente común */
+      font-family: inherit;
       color: #ffffff;
     }
 
@@ -116,8 +119,9 @@
     <canvas class="confetti"></canvas>
   </div>
 
-  <audio id="click-sound" src="romper.mp3"></audio>
-  <audio id="win-sound" src="ganaste.mp3"></audio>
+  <!-- Audio con preload y playsinline -->
+  <audio id="click-sound" src="romper.mp3" preload="auto" playsinline></audio>
+  <audio id="win-sound" src="ganaste.mp3" preload="auto" playsinline></audio>
 
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script>
@@ -125,14 +129,131 @@
     const ice = document.getElementById("ice");
     const count = document.getElementById("click-count");
     const result = document.getElementById("result");
-    const clickSound = document.getElementById("click-sound");
+    const clickSoundEl = document.getElementById("click-sound");
     const winSound = document.getElementById("win-sound");
+
+    // ========= AUDIO MÓVIL: suena desde el primer toque, fluido y reemplazable =========
+    let audioCtx = null;
+    let clickArrayBuffer = null;   // datos crudos del mp3
+    let clickBuffer = null;        // AudioBuffer decodificado
+    let currentSource = null;      // para cortar el sonido previo
+    let unlocked = false;          // ya hicimos el gesto de desbloqueo
+
+    // Prefetch del mp3 para evitar esperas de red en el primer toque
+    (async function prefetchMP3(){
+      try {
+        const url = clickSoundEl.currentSrc || clickSoundEl.src;
+        const res = await fetch(url, { cache: "force-cache" });
+        clickArrayBuffer = await res.arrayBuffer();
+      } catch (e) {
+        // si falla, el <audio> nativo será el fallback
+      }
+    })();
+
+    // Desbloqueo y (si podemos) decodificación en el PRIMER gesto al hielo
+    async function unlockAndPrepare() {
+      if (unlocked) return;
+      unlocked = true;
+
+      try {
+        // Crear/reanudar AudioContext con baja latencia
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+        if (audioCtx.state !== "running") await audioCtx.resume();
+
+        // Ping silencioso (necesario en iOS para habilitar salida)
+        const b = audioCtx.createBuffer(1, 1, 22050);
+        const s = audioCtx.createBufferSource();
+        s.buffer = b;
+        const g = audioCtx.createGain(); g.gain.value = 0.0;
+        s.connect(g); g.connect(audioCtx.destination);
+        try { s.start(0); } catch(e){}
+
+        // Desbloquear el <audio> nativo para el fallback inmediato
+        clickSoundEl.muted = true;
+        try { await clickSoundEl.play(); } catch(_) {}
+        try { clickSoundEl.pause(); clickSoundEl.currentTime = 0; } catch(_) {}
+        clickSoundEl.muted = false;
+
+        // Si ya tenemos los bytes, intentamos decodificar ya
+        if (clickArrayBuffer && !clickBuffer) {
+          try {
+            // usar slice para no consumir el buffer original (algunos navegadores lo requieren)
+            clickBuffer = await audioCtx.decodeAudioData(clickArrayBuffer.slice(0));
+          } catch(e) {
+            // si no se pudo, al siguiente toque seguiremos usando fallback hasta decodificar
+          }
+        }
+      } catch(e) {
+        // si algo falla, el fallback seguirá funcionando
+      }
+    }
+
+    // Reproducir “romper”:
+    // - en móvil: intenta WebAudio; si aún no hay buffer decodificado, usa <audio> inmediatamente
+    // - corta el sonido anterior si está sonando
+    async function playClick() {
+      // Asegurar desbloqueo en el mismo primer toque
+      await unlockAndPrepare();
+
+      // Si ya podemos WebAudio con buffer -> baja latencia y control total
+      if (audioCtx && clickBuffer) {
+        try { if (audioCtx.state !== "running") await audioCtx.resume(); } catch(e){}
+
+        // cortar el sonido anterior
+        if (currentSource) {
+          try { currentSource.stop(0); } catch(_) {}
+          try { currentSource.disconnect(); } catch(_) {}
+          currentSource = null;
+        }
+
+        // crear nuevo playback con un pequeño fade-in/out (evita clics duros en iOS)
+        const src = audioCtx.createBufferSource();
+        src.buffer = clickBuffer;
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(1.0, audioCtx.currentTime + 0.005);
+        const dur = clickBuffer.duration;
+        gain.gain.setValueAtTime(1.0, audioCtx.currentTime + dur - 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+
+        src.connect(gain); gain.connect(audioCtx.destination);
+        src.start(0);
+        currentSource = src;
+        src.onended = () => { if (currentSource === src) currentSource = null; };
+        return;
+      }
+
+      // Fallback inmediato (asegurado por unlockAndPrepare)
+      try {
+        clickSoundEl.pause();
+        clickSoundEl.currentTime = 0;
+        await clickSoundEl.play();
+      } catch(_) {}
+      
+      // Si todavía no decodificamos y sí tenemos bytes, intentamos decodificar en background
+      if (!clickBuffer && clickArrayBuffer && audioCtx) {
+        try { clickBuffer = await audioCtx.decodeAudioData(clickArrayBuffer.slice(0)); } catch(_) {}
+      }
+    }
+
+    // Corta cualquier sonido de “romper” en curso
+    function stopClick() {
+      if (currentSource) {
+        try { currentSource.stop(0); } catch(_) {}
+        try { currentSource.disconnect(); } catch(_) {}
+        currentSource = null;
+      } else {
+        try { clickSoundEl.pause(); } catch(_) {}
+      }
+    }
+    // ===================== FIN AUDIO =====================
 
     function breakIce() {
       if (clicks >= 23) return;
       clicks++;
-      clickSound.currentTime = 0;
-      clickSound.play();
+
+      // Sonido inmediato, incluso en el primer toque móvil
+      playClick();
 
       ice.style.opacity = 1 - clicks / 23;
       count.innerText = clicks < 23
@@ -140,18 +261,20 @@
         : "¡Ganastee!";
 
       if (clicks === 23) {
-        setTimeout(showResult, 500);
+        setTimeout(showResult, 300);
       }
     }
 
     function showResult() {
-      winSound.play();
+      stopClick(); // detener cualquier click residual
+      try { winSound.currentTime = 0; winSound.play(); } catch(_) {}
       result.style.display = "flex";
       launchConfetti();
     }
 
     function resetGame() {
       clicks = 0;
+      stopClick();
       result.style.display = "none";
       count.innerText = "Toca el hielo 23 veces";
       ice.style.opacity = 1;
